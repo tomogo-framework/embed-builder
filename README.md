@@ -41,6 +41,7 @@ collection := embedbuilder.NewCollection()
 if err := collection.AddBuilder(firstBuilder); err != nil {
 return err
 }
+
 if err := collection.AddBuilder(secondBuilder); err != nil {
 return err
 }
