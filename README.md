@@ -39,11 +39,11 @@ and shared 6,000-character limits:
 ```go
 collection := embedbuilder.NewCollection()
 if err := collection.AddBuilder(firstBuilder); err != nil {
-return err
+	return err
 }
 
 if err := collection.AddBuilder(secondBuilder); err != nil {
-return err
+	return err
 }
 
 payload, err := collection.BuildJSON()
