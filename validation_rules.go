@@ -137,7 +137,7 @@ func validHTTPURL(value string) bool {
 	}
 
 	parsed, err := url.Parse(value)
-	if err != nil || parsed.Host == "" {
+	if err != nil || parsed.Hostname() == "" {
 		return false
 	}
 

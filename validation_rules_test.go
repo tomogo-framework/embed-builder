@@ -67,6 +67,29 @@ func TestStrictValidationRules(t *testing.T) {
 	}
 }
 
+func TestURLValidationRequiresHostname(t *testing.T) {
+	t.Parallel()
+
+	for _, value := range []string{"http://:80/path", "https://:443/image.png"} {
+		builder := New().SetURL(value).SetImage(value).SetThumbnail(value).SetAuthor("author", value, value).SetFooter("footer", value)
+		for _, err := range []error{builder.Validate(), ValidateEmbed(builder.embed)} {
+			validationError := requireValidationError(t, err)
+			for _, path := range []string{"url", "image.url", "thumbnail.url", "author.url", "author.icon_url", "footer.icon_url"} {
+				if !containsPath(validationError, path) {
+					t.Errorf("URL %q missing violation for %s: %v", value, path, err)
+				}
+			}
+		}
+	}
+
+	for _, value := range []string{"https://example.com:443/image.png", "http://127.0.0.1:8080/path", "https://[::1]:443/image.png"} {
+		_, err := New().SetURL(value).SetImage(value).Build()
+		if err != nil {
+			t.Errorf("valid URL %q rejected: %v", value, err)
+		}
+	}
+}
+
 func containsRule(validationError *ValidationError, path, rule string) bool {
 	for _, violation := range validationError.Violations {
 		if violation.Path == path && violation.Rule == rule {
