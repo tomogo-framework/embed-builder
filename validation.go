@@ -1,6 +1,7 @@
 package embedbuilder
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"strconv"
@@ -188,9 +189,19 @@ func inspectText(violations []Violation, total, embedIndex int, property, value 
 
 func characterCount(value string) int {
 	trimmed := strings.TrimSpace(value)
-	for index := 0; index < len(trimmed); index++ {
+	index := 0
+	for len(trimmed)-index >= 8 {
+		word := binary.LittleEndian.Uint64([]byte(trimmed[index : index+8]))
+		if word&0x8080808080808080 != 0 {
+			return index + utf8.RuneCountInString(trimmed[index:])
+		}
+
+		index += 8
+	}
+
+	for ; index < len(trimmed); index++ {
 		if trimmed[index] >= utf8.RuneSelf {
-			return utf8.RuneCountInString(trimmed)
+			return index + utf8.RuneCountInString(trimmed[index:])
 		}
 	}
 
