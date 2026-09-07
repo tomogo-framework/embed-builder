@@ -153,6 +153,39 @@ func TestBuilderClearMethods(t *testing.T) {
 	}
 }
 
+func TestClearFieldsReleasesDiscardedText(t *testing.T) {
+	t.Parallel()
+
+	builder := New().AddField("first", "first value", false).AddField("second", "second value", true)
+	snapshot, err := builder.Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	capacity := cap(builder.embed.Fields)
+	builder.ClearFields()
+	if cap(builder.embed.Fields) != capacity || builder.FieldCount() != 0 || builder.CharacterCount() != 0 {
+		t.Fatal("ClearFields did not preserve capacity and reset counts")
+	}
+
+	for _, field := range builder.embed.Fields[:capacity] {
+		if field != (Field{}) {
+			t.Fatalf("ClearFields retained discarded field: %#v", field)
+		}
+	}
+
+	builder.AddField("replacement", "value", false).Reset()
+	for _, field := range builder.embed.Fields[:capacity] {
+		if field != (Field{}) {
+			t.Fatalf("reuse and Reset retained discarded field: %#v", field)
+		}
+	}
+
+	if snapshot.Fields[0].Value != "first value" || snapshot.Fields[1].Value != "second value" {
+		t.Fatal("ClearFields changed a previously built snapshot")
+	}
+}
+
 func TestWithCurrentTimestamp(t *testing.T) {
 	t.Parallel()
 

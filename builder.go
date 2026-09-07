@@ -231,6 +231,9 @@ func (b *Builder) AddFields(fields ...Field) *Builder {
 
 // ClearFields removes all fields while retaining allocated storage for reuse.
 func (b *Builder) ClearFields() *Builder {
+	clear(b.embed.Fields)
+	clear(b.counts.fieldViolations)
+
 	b.counts.total -= b.counts.fields
 	b.counts.fields = 0
 	b.counts.fieldViolations = b.counts.fieldViolations[:0]
