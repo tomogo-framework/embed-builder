@@ -2,9 +2,11 @@ package embedbuilder
 
 import (
 	"encoding/json"
+	"encoding/json/jsontext"
 	"reflect"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestJSONEscapingAcrossProperties(t *testing.T) {
@@ -106,6 +108,38 @@ func TestEscapedJSONAllocations(t *testing.T) {
 			t.Errorf("escaped JSON allocated %g times, want at most two including race instrumentation", allocations)
 		}
 	}
+}
+
+func FuzzJSONQuoting(f *testing.F) {
+	var ascii strings.Builder
+	for character := 0; character < 128; character++ {
+		ascii.WriteByte(byte(character))
+	}
+
+	for _, value := range []string{ascii.String(), "", "plain", "\"\\\b\f\n\r\t\x00", "<>&🙂\u2028\u2029\ufffd"} {
+		f.Add(value)
+	}
+
+	f.Fuzz(func(t *testing.T, value string) {
+		if !utf8.ValidString(value) {
+			return
+		}
+
+		want, err := jsontext.AppendQuote(nil, value)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		buffer := make([]byte, 0, len(want))
+		got := appendEscapedJSONString(buffer, value)
+		if string(got) != string(want) {
+			t.Fatalf("quoted JSON = %q, want %q", got, want)
+		}
+
+		if &got[0] != &buffer[:cap(buffer)][0] {
+			t.Fatal("quoting exceeded the expected output capacity")
+		}
+	})
 }
 
 func FuzzBuildJSONRoundTrip(f *testing.F) {

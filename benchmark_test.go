@@ -108,6 +108,13 @@ func BenchmarkBuildJSON(b *testing.B) {
 }
 
 func BenchmarkBuildJSONEscaping(b *testing.B) {
+	b.Run("MostlyPlain", func(b *testing.B) {
+		benchmarkJSON(b, newMaximumBenchmarkBuilder().SetTitle("a\"b"), false)
+	})
+	b.Run("Unicode", func(b *testing.B) {
+		benchmarkJSON(b, New().SetTitle("a\"b").SetDescription(strings.Repeat("🙂", 1000)), false)
+	})
+
 	for _, test := range []struct {
 		name  string
 		value string

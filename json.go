@@ -1,7 +1,6 @@
 package embedbuilder
 
 import (
-	"encoding/json/jsontext"
 	"slices"
 	"strconv"
 )
@@ -206,7 +205,7 @@ func appendFieldsJSON(dst []byte, fields []Field, escaped bool) []byte {
 func appendStringProperty(dst []byte, first bool, name, value string, escaped bool) ([]byte, bool) {
 	dst, _ = appendPropertyName(dst, first, name)
 	if escaped {
-		dst, _ = jsontext.AppendQuote(dst, value)
+		dst = appendEscapedJSONString(dst, value)
 	} else {
 		dst = append(dst, '"')
 		dst = append(dst, value...)
@@ -216,10 +215,58 @@ func appendStringProperty(dst []byte, first bool, name, value string, escaped bo
 	return dst, false
 }
 
+// appendEscapedJSONString quotes UTF-8 that has already passed validation.
+func appendEscapedJSONString(dst []byte, value string) []byte {
+	const hex = "0123456789abcdef"
+	dst = append(dst, '"')
+	start := 0
+	for index := 0; index < len(value); index++ {
+		character := value[index]
+		if jsonEscapeExtraBytes[character] == 0 {
+			continue
+		}
+
+		if start < index {
+			dst = append(dst, value[start:index]...)
+		}
+
+		switch character {
+		case '"', '\\':
+			dst = append(dst, '\\', character)
+		case '\b':
+			dst = append(dst, '\\', 'b')
+		case '\f':
+			dst = append(dst, '\\', 'f')
+		case '\n':
+			dst = append(dst, '\\', 'n')
+		case '\r':
+			dst = append(dst, '\\', 'r')
+		case '\t':
+			dst = append(dst, '\\', 't')
+		default:
+			dst = append(dst, '\\', 'u', '0', '0', hex[character>>4], hex[character&0xF])
+		}
+
+		start = index + 1
+	}
+
+	dst = append(dst, value[start:]...)
+	dst = append(dst, '"')
+
+	return dst
+}
+
 // jsonStringSize measures validated UTF-8 without the surrounding quotes.
 func jsonStringSize(value string, escaped *bool) int {
 	extra := 0
-	for index := 0; index < len(value); index++ {
+	index := 0
+	for len(value)-index >= 4 {
+		extra += int(jsonEscapeExtraBytes[value[index]]) + int(jsonEscapeExtraBytes[value[index+1]]) +
+			int(jsonEscapeExtraBytes[value[index+2]]) + int(jsonEscapeExtraBytes[value[index+3]])
+		index += 4
+	}
+
+	for ; index < len(value); index++ {
 		extra += int(jsonEscapeExtraBytes[value[index]])
 	}
 
