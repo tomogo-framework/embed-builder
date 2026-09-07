@@ -6,6 +6,44 @@ import (
 	"strconv"
 )
 
+// Validated UTF-8 only expands when an ASCII byte needs a JSON escape.
+var jsonEscapeExtraBytes = [256]uint8{
+	0:    5,
+	1:    5,
+	2:    5,
+	3:    5,
+	4:    5,
+	5:    5,
+	6:    5,
+	7:    5,
+	8:    1,
+	9:    1,
+	10:   1,
+	11:   5,
+	12:   1,
+	13:   1,
+	14:   5,
+	15:   5,
+	16:   5,
+	17:   5,
+	18:   5,
+	19:   5,
+	20:   5,
+	21:   5,
+	22:   5,
+	23:   5,
+	24:   5,
+	25:   5,
+	26:   5,
+	27:   5,
+	28:   5,
+	29:   5,
+	30:   5,
+	31:   5,
+	'"':  1,
+	'\\': 1,
+}
+
 // BuildJSON validates and marshals the embed as a Discord-compatible JSON object.
 func (b *Builder) BuildJSON() ([]byte, error) {
 	return b.AppendJSON(nil)
@@ -17,9 +55,10 @@ func (b *Builder) AppendJSON(dst []byte) ([]byte, error) {
 		return dst, err
 	}
 
-	dst = slices.Grow(dst, estimateEmbedJSONSize(b.embed))
+	size, escaped := estimateEmbedJSONSize(b.embed)
+	dst = slices.Grow(dst, size)
 
-	return appendEmbedJSON(dst, b.embed), nil
+	return appendEmbedJSON(dst, b.embed, escaped), nil
 }
 
 // BuildJSON validates and marshals the collection as a JSON embed array.
@@ -34,8 +73,11 @@ func (c *CollectionBuilder) AppendJSON(dst []byte) ([]byte, error) {
 	}
 
 	size := 2
-	for _, embed := range c.embeds {
-		size += estimateEmbedJSONSize(embed) + 1
+	var escaped [MaxEmbedsPerMessage]bool
+	for index, embed := range c.embeds {
+		embedSize, needsEscaping := estimateEmbedJSONSize(embed)
+		size += embedSize + 1
+		escaped[index] = needsEscaping
 	}
 
 	dst = slices.Grow(dst, size)
@@ -45,7 +87,7 @@ func (c *CollectionBuilder) AppendJSON(dst []byte) ([]byte, error) {
 			dst = append(dst, ',')
 		}
 
-		dst = appendEmbedJSON(dst, embed)
+		dst = appendEmbedJSON(dst, embed, escaped[index])
 	}
 
 	dst = append(dst, ']')
@@ -53,22 +95,22 @@ func (c *CollectionBuilder) AppendJSON(dst []byte) ([]byte, error) {
 	return dst, nil
 }
 
-func appendEmbedJSON(dst []byte, embed Embed) []byte {
+func appendEmbedJSON(dst []byte, embed Embed, escaped bool) []byte {
 	dst = append(dst, '{')
 
 	first := true
 
 	if embed.Title != "" {
-		dst, first = appendStringProperty(dst, first, "title", embed.Title)
+		dst, first = appendStringProperty(dst, first, "title", embed.Title, escaped)
 	}
 	if embed.Description != "" {
-		dst, first = appendStringProperty(dst, first, "description", embed.Description)
+		dst, first = appendStringProperty(dst, first, "description", embed.Description, escaped)
 	}
 	if embed.URL != "" {
-		dst, first = appendStringProperty(dst, first, "url", embed.URL)
+		dst, first = appendStringProperty(dst, first, "url", embed.URL, escaped)
 	}
 	if embed.Timestamp != "" {
-		dst, first = appendStringProperty(dst, first, "timestamp", embed.Timestamp)
+		dst, first = appendStringProperty(dst, first, "timestamp", embed.Timestamp, escaped)
 	}
 	if embed.Color != nil {
 		dst, first = appendPropertyName(dst, first, "color")
@@ -76,23 +118,23 @@ func appendEmbedJSON(dst []byte, embed Embed) []byte {
 	}
 	if embed.Footer != nil {
 		dst, first = appendPropertyName(dst, first, "footer")
-		dst = appendFooterJSON(dst, *embed.Footer)
+		dst = appendFooterJSON(dst, *embed.Footer, escaped)
 	}
 	if embed.Image != nil {
 		dst, first = appendPropertyName(dst, first, "image")
-		dst = appendMediaJSON(dst, *embed.Image)
+		dst = appendMediaJSON(dst, *embed.Image, escaped)
 	}
 	if embed.Thumbnail != nil {
 		dst, first = appendPropertyName(dst, first, "thumbnail")
-		dst = appendMediaJSON(dst, *embed.Thumbnail)
+		dst = appendMediaJSON(dst, *embed.Thumbnail, escaped)
 	}
 	if embed.Author != nil {
 		dst, first = appendPropertyName(dst, first, "author")
-		dst = appendAuthorJSON(dst, *embed.Author)
+		dst = appendAuthorJSON(dst, *embed.Author, escaped)
 	}
 	if len(embed.Fields) != 0 {
 		dst, first = appendPropertyName(dst, first, "fields")
-		dst = appendFieldsJSON(dst, embed.Fields)
+		dst = appendFieldsJSON(dst, embed.Fields, escaped)
 	}
 
 	dst = append(dst, '}')
@@ -100,11 +142,11 @@ func appendEmbedJSON(dst []byte, embed Embed) []byte {
 	return dst
 }
 
-func appendFooterJSON(dst []byte, footer Footer) []byte {
+func appendFooterJSON(dst []byte, footer Footer, escaped bool) []byte {
 	dst = append(dst, '{')
-	dst, _ = appendStringProperty(dst, true, "text", footer.Text)
+	dst, _ = appendStringProperty(dst, true, "text", footer.Text, escaped)
 	if footer.IconURL != "" {
-		dst, _ = appendStringProperty(dst, false, "icon_url", footer.IconURL)
+		dst, _ = appendStringProperty(dst, false, "icon_url", footer.IconURL, escaped)
 	}
 
 	dst = append(dst, '}')
@@ -112,24 +154,24 @@ func appendFooterJSON(dst []byte, footer Footer) []byte {
 	return dst
 }
 
-func appendMediaJSON(dst []byte, media Media) []byte {
+func appendMediaJSON(dst []byte, media Media, escaped bool) []byte {
 	dst = append(dst, '{')
-	dst, _ = appendStringProperty(dst, true, "url", media.URL)
+	dst, _ = appendStringProperty(dst, true, "url", media.URL, escaped)
 	dst = append(dst, '}')
 
 	return dst
 }
 
-func appendAuthorJSON(dst []byte, author Author) []byte {
+func appendAuthorJSON(dst []byte, author Author, escaped bool) []byte {
 	dst = append(dst, '{')
-	dst, _ = appendStringProperty(dst, true, "name", author.Name)
+	dst, _ = appendStringProperty(dst, true, "name", author.Name, escaped)
 
 	if author.URL != "" {
-		dst, _ = appendStringProperty(dst, false, "url", author.URL)
+		dst, _ = appendStringProperty(dst, false, "url", author.URL, escaped)
 	}
 
 	if author.IconURL != "" {
-		dst, _ = appendStringProperty(dst, false, "icon_url", author.IconURL)
+		dst, _ = appendStringProperty(dst, false, "icon_url", author.IconURL, escaped)
 	}
 
 	dst = append(dst, '}')
@@ -137,7 +179,7 @@ func appendAuthorJSON(dst []byte, author Author) []byte {
 	return dst
 }
 
-func appendFieldsJSON(dst []byte, fields []Field) []byte {
+func appendFieldsJSON(dst []byte, fields []Field, escaped bool) []byte {
 	dst = append(dst, '[')
 	for index, field := range fields {
 		if index != 0 {
@@ -145,8 +187,8 @@ func appendFieldsJSON(dst []byte, fields []Field) []byte {
 		}
 
 		dst = append(dst, '{')
-		dst, _ = appendStringProperty(dst, true, "name", field.Name)
-		dst, _ = appendStringProperty(dst, false, "value", field.Value)
+		dst, _ = appendStringProperty(dst, true, "name", field.Name, escaped)
+		dst, _ = appendStringProperty(dst, false, "value", field.Value, escaped)
 
 		if field.Inline {
 			dst, _ = appendPropertyName(dst, false, "inline")
@@ -161,28 +203,31 @@ func appendFieldsJSON(dst []byte, fields []Field) []byte {
 	return dst
 }
 
-func appendStringProperty(dst []byte, first bool, name, value string) ([]byte, bool) {
+func appendStringProperty(dst []byte, first bool, name, value string, escaped bool) ([]byte, bool) {
 	dst, _ = appendPropertyName(dst, first, name)
-	dst = appendJSONString(dst, value)
+	if escaped {
+		dst, _ = jsontext.AppendQuote(dst, value)
+	} else {
+		dst = append(dst, '"')
+		dst = append(dst, value...)
+		dst = append(dst, '"')
+	}
 
 	return dst, false
 }
 
-func appendJSONString(dst []byte, value string) []byte {
+// jsonStringSize measures validated UTF-8 without the surrounding quotes.
+func jsonStringSize(value string, escaped *bool) int {
+	extra := 0
 	for index := 0; index < len(value); index++ {
-		character := value[index]
-		if character < ' ' || character == '"' || character == '\\' {
-			dst, _ = jsontext.AppendQuote(dst, value)
-
-			return dst
-		}
+		extra += int(jsonEscapeExtraBytes[value[index]])
 	}
 
-	dst = append(dst, '"')
-	dst = append(dst, value...)
-	dst = append(dst, '"')
+	if extra != 0 {
+		*escaped = true
+	}
 
-	return dst
+	return len(value) + extra
 }
 
 func appendPropertyName(dst []byte, first bool, name string) ([]byte, bool) {
@@ -197,24 +242,25 @@ func appendPropertyName(dst []byte, first bool, name string) ([]byte, bool) {
 	return dst, false
 }
 
-func estimateEmbedJSONSize(embed Embed) int {
+func estimateEmbedJSONSize(embed Embed) (int, bool) {
+	var escaped bool
 	size := 2
 	properties := 0
 
 	if embed.Title != "" {
-		size += len("title") + 5 + len(embed.Title)
+		size += len("title") + 5 + jsonStringSize(embed.Title, &escaped)
 		properties++
 	}
 	if embed.Description != "" {
-		size += len("description") + 5 + len(embed.Description)
+		size += len("description") + 5 + jsonStringSize(embed.Description, &escaped)
 		properties++
 	}
 	if embed.URL != "" {
-		size += len("url") + 5 + len(embed.URL)
+		size += len("url") + 5 + jsonStringSize(embed.URL, &escaped)
 		properties++
 	}
 	if embed.Timestamp != "" {
-		size += len("timestamp") + 5 + len(embed.Timestamp)
+		size += len("timestamp") + 5 + jsonStringSize(embed.Timestamp, &escaped)
 		properties++
 	}
 	if embed.Color != nil {
@@ -223,31 +269,31 @@ func estimateEmbedJSONSize(embed Embed) int {
 	}
 
 	if embed.Footer != nil {
-		footerSize := 2 + len("text") + 5 + len(embed.Footer.Text)
+		footerSize := 2 + len("text") + 5 + jsonStringSize(embed.Footer.Text, &escaped)
 		if embed.Footer.IconURL != "" {
-			footerSize += 1 + len("icon_url") + 5 + len(embed.Footer.IconURL)
+			footerSize += 1 + len("icon_url") + 5 + jsonStringSize(embed.Footer.IconURL, &escaped)
 		}
 
 		size += len("footer") + 3 + footerSize
 		properties++
 	}
 	if embed.Image != nil {
-		mediaSize := 2 + len("url") + 5 + len(embed.Image.URL)
+		mediaSize := 2 + len("url") + 5 + jsonStringSize(embed.Image.URL, &escaped)
 		size += len("image") + 3 + mediaSize
 		properties++
 	}
 	if embed.Thumbnail != nil {
-		mediaSize := 2 + len("url") + 5 + len(embed.Thumbnail.URL)
+		mediaSize := 2 + len("url") + 5 + jsonStringSize(embed.Thumbnail.URL, &escaped)
 		size += len("thumbnail") + 3 + mediaSize
 		properties++
 	}
 	if embed.Author != nil {
-		authorSize := 2 + len("name") + 5 + len(embed.Author.Name)
+		authorSize := 2 + len("name") + 5 + jsonStringSize(embed.Author.Name, &escaped)
 		if embed.Author.URL != "" {
-			authorSize += 1 + len("url") + 5 + len(embed.Author.URL)
+			authorSize += 1 + len("url") + 5 + jsonStringSize(embed.Author.URL, &escaped)
 		}
 		if embed.Author.IconURL != "" {
-			authorSize += 1 + len("icon_url") + 5 + len(embed.Author.IconURL)
+			authorSize += 1 + len("icon_url") + 5 + jsonStringSize(embed.Author.IconURL, &escaped)
 		}
 
 		size += len("author") + 3 + authorSize
@@ -257,8 +303,8 @@ func estimateEmbedJSONSize(embed Embed) int {
 	if len(embed.Fields) != 0 {
 		fieldsSize := 2 + len(embed.Fields) - 1
 		for _, field := range embed.Fields {
-			fieldSize := 2 + len("name") + 5 + len(field.Name)
-			fieldSize += 1 + len("value") + 5 + len(field.Value)
+			fieldSize := 2 + len("name") + 5 + jsonStringSize(field.Name, &escaped)
+			fieldSize += 1 + len("value") + 5 + jsonStringSize(field.Value, &escaped)
 			if field.Inline {
 				fieldSize += 1 + len("inline") + 3 + len("true")
 			}
@@ -274,5 +320,5 @@ func estimateEmbedJSONSize(embed Embed) int {
 		size += properties - 1
 	}
 
-	return size
+	return size, escaped
 }

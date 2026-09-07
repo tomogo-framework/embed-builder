@@ -28,6 +28,15 @@ func BenchmarkValidate(b *testing.B) {
 	b.Run("MaximumASCII", func(b *testing.B) {
 		benchmarkValidate(b, newMaximumBenchmarkBuilder())
 	})
+	b.Run("MaximumAfterEdit", func(b *testing.B) {
+		builder := newMaximumBenchmarkBuilder()
+		b.ReportAllocs()
+
+		for b.Loop() {
+			builder.SetTitle("updated")
+			benchmarkError = builder.Validate()
+		}
+	})
 	b.Run("Unicode", func(b *testing.B) {
 		builder := New().SetDescription(strings.Repeat("🙂", MaxDescriptionCharacters))
 
@@ -95,6 +104,46 @@ func BenchmarkBuildJSON(b *testing.B) {
 	})
 	b.Run("AppendMaximum", func(b *testing.B) {
 		benchmarkJSON(b, newMaximumBenchmarkBuilder(), true)
+	})
+}
+
+func BenchmarkBuildJSONEscaping(b *testing.B) {
+	for _, test := range []struct {
+		name  string
+		value string
+	}{
+		{
+			name:  "Quotes",
+			value: strings.Repeat("\"\\", 1500),
+		},
+		{
+			name:  "Whitespace",
+			value: "x" + strings.Repeat("\n\t", 1499) + "x",
+		},
+		{
+			name:  "Controls",
+			value: "x" + strings.Repeat("\x00", 2998) + "x",
+		},
+	} {
+		b.Run(test.name, func(b *testing.B) {
+			benchmarkJSON(b, New().SetDescription(test.value), false)
+		})
+	}
+
+	b.Run("Collection", func(b *testing.B) {
+		collection := NewCollection()
+		for index := 0; index < MaxEmbedsPerMessage; index++ {
+			collection.Add(Embed{
+				Description: strings.Repeat("\x00", 500),
+			})
+		}
+
+		b.ReportAllocs()
+		b.ResetTimer()
+
+		for b.Loop() {
+			benchmarkBytes, benchmarkError = collection.BuildJSON()
+		}
 	})
 }
 
