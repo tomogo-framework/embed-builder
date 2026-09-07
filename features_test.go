@@ -206,6 +206,42 @@ func TestNewFromEmbedCloneAndReset(t *testing.T) {
 	}
 }
 
+func TestCloneKeepsIndependentValidationState(t *testing.T) {
+	t.Parallel()
+
+	for _, validated := range []bool{false, true} {
+		source := New().SetTitle("original").SetFooter(" ").AddField(strings.Repeat("n", MaxFieldNameCharacters+1), "\xff", false)
+		if validated {
+			_ = source.Validate()
+		}
+
+		clone := source.Clone()
+		want := ValidateEmbed(clone.embed)
+		wantCount := clone.CharacterCount()
+		source.ClearFields().SetFooter("updated").SetTitle("source")
+		if err := source.Validate(); err != nil {
+			t.Fatal(err)
+		}
+
+		if got := clone.Validate(); !reflect.DeepEqual(got, want) {
+			t.Fatalf("validated=%t: source mutation changed clone validation: got %v, want %v", validated, got, want)
+		}
+
+		if clone.CharacterCount() != wantCount {
+			t.Fatal("source mutation changed clone character count")
+		}
+
+		clone.ClearFields().ClearFooter().SetTitle("clone")
+		if err := clone.Validate(); err != nil {
+			t.Fatal(err)
+		}
+
+		if source.embed.Title != "source" || source.embed.Footer.Text != "updated" || source.CharacterCount() != len("sourceupdated") {
+			t.Fatal("clone mutation changed source state")
+		}
+	}
+}
+
 func TestColorHelpers(t *testing.T) {
 	t.Parallel()
 

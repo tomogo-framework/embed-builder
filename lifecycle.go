@@ -1,15 +1,23 @@
 package embedbuilder
 
+import "slices"
+
+func newBuilderSnapshot(embed Embed) *Builder {
+	fields := embed.Fields
+	embed.Fields = nil
+	builder := &Builder{
+		embed: cloneEmbed(embed),
+	}
+	builder.embed.Fields = make([]Field, len(fields), max(initialFieldCapacity, len(fields)))
+	copy(builder.embed.Fields, fields)
+
+	return builder
+}
+
 // NewFromEmbed returns a Builder initialized from an independent copy of embed. Validation remains deferred until
 // Validate or Build.
 func NewFromEmbed(embed Embed) *Builder {
-	builder := &Builder{embed: cloneEmbed(embed)}
-	if cap(builder.embed.Fields) < initialFieldCapacity {
-		fields := make([]Field, len(builder.embed.Fields), initialFieldCapacity)
-		copy(fields, builder.embed.Fields)
-		builder.embed.Fields = fields
-	}
-
+	builder := newBuilderSnapshot(embed)
 	builder.recalculateAllCounts()
 	builder.counts.rulesDirty = true
 
@@ -22,7 +30,12 @@ func (b *Builder) Clone() *Builder {
 		return nil
 	}
 
-	return NewFromEmbed(b.embed)
+	clone := newBuilderSnapshot(b.embed)
+	clone.counts = b.counts
+	clone.counts.fieldViolations = slices.Clone(b.counts.fieldViolations)
+	clone.counts.ruleViolations = slices.Clone(b.counts.ruleViolations)
+
+	return clone
 }
 
 // Reset clears all embed content while retaining field storage for reuse.
