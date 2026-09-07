@@ -14,8 +14,8 @@ var ErrNilBuilder = errors.New("embedbuilder: nil builder")
 // ErrNilCollection is returned when a collection method requiring state is called on a nil CollectionBuilder.
 var ErrNilCollection = errors.New("embedbuilder: nil collection")
 
-// Violation describes one Discord embed validation violation. Rule is populated for structural violations; Actual and
-// Limit are populated for size limits.
+// Violation describes one Discord embed validation violation. Rule is populated for structural violations and values
+// too large to represent as int; Actual and Limit are populated for representable size limits.
 type Violation struct {
 	Path   string
 	Rule   string
@@ -100,7 +100,7 @@ func validateBuilder(builder *Builder) error {
 	violations = appendViolation(violations, "footer.text", builder.counts.footer, MaxFooterCharacters)
 	violations = appendViolation(violations, "author.name", builder.counts.author, MaxAuthorNameCharacters)
 	if builder.embed.Color != nil {
-		violations = appendViolation(violations, "color", int(*builder.embed.Color), MaxColor)
+		violations = appendColorViolation(violations, "color", *builder.embed.Color)
 	}
 
 	violations = appendViolation(violations, "total_characters", builder.counts.total, MaxTotalCharacters)
@@ -157,11 +157,7 @@ func inspectEmbed(embed Embed, embedIndex int, validateTotal bool) ([]Violation,
 		violations, total = inspectText(violations, total, embedIndex, "author.name", embed.Author.Name, MaxAuthorNameCharacters)
 	}
 	if embed.Color != nil && *embed.Color > MaxColor {
-		violations = append(violations, Violation{
-			Path:   embedViolationPath(embedIndex, "color"),
-			Actual: int(*embed.Color),
-			Limit:  MaxColor,
-		})
+		violations = appendColorViolation(violations, embedViolationPath(embedIndex, "color"), *embed.Color)
 	}
 	if validateTotal && total > MaxTotalCharacters {
 		violations = append(violations, Violation{
@@ -199,6 +195,24 @@ func characterCount(value string) int {
 	}
 
 	return len(trimmed)
+}
+
+func appendColorViolation(violations []Violation, path string, color uint32) []Violation {
+	if color <= MaxColor {
+		return violations
+	}
+
+	violation := Violation{
+		Path: path,
+	}
+	if strconv.IntSize == 32 && color > 1<<31-1 {
+		violation.Rule = fmt.Sprintf("has %d, limit is %d", color, MaxColor)
+	} else {
+		violation.Actual = int(color)
+		violation.Limit = MaxColor
+	}
+
+	return append(violations, violation)
 }
 
 func appendViolation(violations []Violation, path string, actual, limit int) []Violation {
