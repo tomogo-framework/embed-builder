@@ -44,6 +44,30 @@ func TestCharacterBudget(t *testing.T) {
 	}
 }
 
+func TestCanAddFieldMatchesUTF8Validation(t *testing.T) {
+	t.Parallel()
+
+	for _, value := range []string{"valid", "🙂", "\ufffd", "\xff", "\xc3", "\xed\xa0\x80"} {
+		for _, field := range []Field{
+			{
+				Name:  value,
+				Value: "value",
+			},
+			{
+				Name:  "name",
+				Value: value,
+			},
+		} {
+			builder := New()
+			canAdd := builder.CanAddField(field.Name, field.Value)
+			_, err := builder.AddFields(field).Build()
+			if canAdd != (err == nil) {
+				t.Errorf("CanAddField(%q, %q) = %t, Build error = %v", field.Name, field.Value, canAdd, err)
+			}
+		}
+	}
+}
+
 func TestCharacterBudgetNilAndOverLimit(t *testing.T) {
 	t.Parallel()
 

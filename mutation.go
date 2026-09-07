@@ -3,6 +3,7 @@ package embedbuilder
 import (
 	"errors"
 	"fmt"
+	"unicode/utf8"
 )
 
 // ErrFieldIndexOutOfRange identifies an invalid field mutation index.
@@ -39,6 +40,10 @@ func (b *Builder) FieldCount() int {
 // CanAddField reports whether adding the field would preserve every current validation rule and Discord size limit.
 func (b *Builder) CanAddField(name, value string) bool {
 	if b == nil || len(b.embed.Fields) >= MaxFields || b.Validate() != nil {
+		return false
+	}
+
+	if !utf8.ValidString(name) || !utf8.ValidString(value) {
 		return false
 	}
 
