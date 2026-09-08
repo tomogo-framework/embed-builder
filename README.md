@@ -1,7 +1,23 @@
-# embedbuilder
+# embed-builder
 
-`embedbuilder` is a framework-agnostic Go builder for Discord rich embeds. It produces plain structs with
+`embed-builder` is a framework-agnostic Go builder for Discord rich embeds. It produces plain structs with
 Discord-compatible JSON tags, so it works with any HTTP or Discord library. It requires Go 1.27 or newer.
+
+Install the module:
+
+```sh
+go get github.com/tomogo-framework/embed-builder
+```
+
+Import it using the new module path. The Go package name remains `embedbuilder`:
+
+```go
+import "github.com/tomogo-framework/embed-builder"
+```
+
+If upgrading from `github.com/depthbomb/embedbuilder`, replace that import path with
+`github.com/tomogo-framework/embed-builder`, then run `go mod tidy` in your project. Existing `embedbuilder` calls
+remain the same.
 
 ```go
 embed, err := embedbuilder.New().
